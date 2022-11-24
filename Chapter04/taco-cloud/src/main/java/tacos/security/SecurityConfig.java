@@ -2,27 +2,21 @@ package tacos.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.ldap.core.support.BaseLdapPathContextSource;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.jdbc.JdbcDaoImpl;
+import org.springframework.security.config.ldap.EmbeddedLdapServerContextSourceFactoryBean;
+import org.springframework.security.config.ldap.LdapPasswordComparisonAuthenticationManagerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.NoOpPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.JdbcUserDetailsManager;
-import org.springframework.security.provisioning.UserDetailsManager;
+import org.springframework.security.ldap.server.UnboundIdContainer;
 import org.springframework.security.web.SecurityFilterChain;
 
-import javax.sql.DataSource;
-
-@Configuration
-@EnableWebSecurity
 /**
  * WebSecurityConfigurerAdapter 클래스가 Deprecated 되어서 상속받아 Override 하는 방식이 아닌 Bean 등록 방식으로 변경.
  */
+@Configuration
+@EnableWebSecurity
 public class SecurityConfig {
 
     /** Spring Security 5.7.0-M2부터
@@ -144,7 +138,55 @@ public class SecurityConfig {
 
     /* 3. LDAP Authentication
 
-     */
+
     // 기존 방식
-    
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth
+            .ldapAuthentication() // LDAP 기반 인증 스프링 시큐리티 구성을 위한 메서드
+            .userSearchBase("ou=people") // 기본적으로 사용자와 그룹 모두 LDAP 기본 쿼리는 비어 있어서 LDAP 계층의 루트부터 수행됨
+                // 사용자를 찾기 위한 기준점 쿼리 제공
+            .userSearchFilter("(uid={0})") // LDAP 기본 쿼리의 필터 제공. 사용자 검색
+            .groupSearchBase("ou=groups") // 그룹을 찾기 위한 기준점 쿼리 지정 => 루트부터 검색하는 것이 아니라
+                // 사용자는 people 구성 단위(Organizational Unit, OU)부터, 그룹은 groups 구성 단위부터 검색 시작
+            .groupSearchFilter("member={0}")
+            .contextSource() // contextSource() 는 ContextSourceBuilder 를 반환하여 LDAP 서버의 위치를 지정할 수 있게 한다.
+            .root("dc=tacocloud,dc=com") // 내장된 LDAP 서버 사용 시 원격 LDAP 서버 URL 설정(:url()) 대신 root() 메서드를 사용해 내장 서버의 루트 경로를 지정한다.
+            .ldif("classpath:users.ldif") // LDAP 서버가 시작될 때 classpath 에서 찾을 수 있는 LDIF 파일로부터 데이터를 로드함.
+                // 스프링이 classpath 를 검색하지 않고 LDIF 파일을 찾도록 한다면, ldif() 메서드를 사용해 LDIF 파일을 찾을 수 있는 경로를 지정한다.
+            .and()
+            .passwordCompare() // LDAP 기본 인증 전략 : 사용자가 LDAP 서버에서 인증.
+                // 그러나 passwordCompare() 을 사용하여 입력된 비밀번호를 LDAP 디렉터리에 전송하고 이 비밀번호를 사용자의 비밀번호 속성 값과 비교하도록 LDAP 서버에 요청한다.
+            .passwordEncoder(new BCryptPasswordEncoder()) // 비밀번호 암호화 인코더 지정. 서버 측에서 비밀번호 비교 시 실제 비밀번호가 서버에 유지된다.
+                // bcrypt 암호화 해싱 인코더를 사용해 비밀번호 암호화, 이것은 LDAP 서버에서도 bcrypt 를 사용해 비밀번호가 암호화된다.
+            .passwordAttribute("userPasscord"); // 로그인 폼에 입력된 비밀번호가 사용자의 LDAP 서버에 있는 userPassword 속성값과 비교됨.
+            // 위 메서드로 비밀번호 속성의 이름을 지정한다. => 전달된 비밀번호와 userPasscode 속성 값과 비교할 것을 지정.
+
+        // 이는 classpath 루트에서 users.ldif 파일을 찾아 LDAP 서버로 데이터를 로드하라고 요청한다.
+    }
+    */
+    // version 5.7.0
+    @Bean
+    public EmbeddedLdapServerContextSourceFactoryBean contextSourceFactoryBean() {
+        EmbeddedLdapServerContextSourceFactoryBean contextSourceFactoryBean = EmbeddedLdapServerContextSourceFactoryBean.fromEmbeddedLdapServer();
+        contextSourceFactoryBean.setRoot("dc=tacocloud,dc=com");
+        contextSourceFactoryBean.setLdif("classpath:users.ldif");
+
+        return contextSourceFactoryBean;
+    }
+
+    @Bean
+    UnboundIdContainer ldapContainer() {
+        return new UnboundIdContainer("dc=tacocloud,dc=com", "classpath:users.ldif");
+    }
+    @Bean
+    AuthenticationManager ldapAuthenticationManager(BaseLdapPathContextSource contextSource) {
+        LdapPasswordComparisonAuthenticationManagerFactory factory =
+                new LdapPasswordComparisonAuthenticationManagerFactory(
+                                                        contextSource, new BCryptPasswordEncoder());
+        factory.setUserDnPatterns("uid={0},ou=people");
+//        factory.setUserDetailsContextMapper(new PersonContextMapper());
+        factory.setPasswordAttribute("userPasscode");
+        return factory.createAuthenticationManager();
+    }
 }

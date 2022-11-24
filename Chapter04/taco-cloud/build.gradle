@@ -26,6 +26,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.security:spring-security-test'
+    // LDAP 서버 구성 dependencies
+    implementation 'org.springframework.ldap:spring-ldap-core:3.0.0'
+    implementation 'org.springframework.boot:spring-boot-starter-data-ldap:2.7.5'
+    implementation 'org.springframework.security:spring-security-ldap:5.7.3'
+    runtimeOnly "com.unboundid:unboundid-ldapsdk:6.0.6"
+
     compileOnly 'org.projectlombok:lombok'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     runtimeOnly 'com.h2database:h2'
